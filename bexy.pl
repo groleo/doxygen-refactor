@@ -11,7 +11,7 @@ while (<>) {              # Read input into default variable $_
         $it_decl=$1;
    }
    if (m/\@X(.*),(.*)\@Y/) {
-        s/\@X(.*),(.*)\@Y/$2!=${it_decl}end() && $1=*$2/gi;
+        s/\@X(.*),(.*)\@Y/$2!=${it_decl}end() && ($1=*$2)/gi;
    }
    print $_;
 }

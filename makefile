@@ -57,7 +57,7 @@ DOXYGEN_DIR=$(shell realpath ../doxygen)
 REF_SRC=$(PWD)
 
 .PHONY: all
-all: r
+all: r s
 
 refactor: refactor.cpp
 	$(CXX) $(CXXFLAGS) $(LLVM_CXXFLAGS) $(CLANG_INCLUDES) refactor.cpp -c -o refactor.o
@@ -90,8 +90,8 @@ r: refactor
 	mv $${file}.ref $${file} ; done
 
 
-.PHONY: query
-query:
+.PHONY: q
+q:
 	cd $(DOXYGEN_DIR)/build && git reset --hard
 	clang-query-$(LLVM_VERSION) -p $(DOXYGEN_DIR)/build/ $(DOXYGEN_DIR)/src/*.cpp $(DOXYGEN_DIR)/src/*.h
 
@@ -103,8 +103,8 @@ clean:
 .PHONY: help
 help:
 	@echo "r - refactor"
-	@echo "s - update status"
-	@echo "query"
+	@echo "s - update status in README.md"
+	@echo "q - run clang-query"
 
 s:
 	sed -e '/Refactorings status/,$$ d' -i README.md

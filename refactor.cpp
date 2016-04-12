@@ -49,7 +49,9 @@ cl::list<std::string> SourcePaths(cl::Positional, cl::desc("<source0> [... <sour
 std::unordered_set<const FieldDecl*> g_unique_fdecl;
 std::unordered_set<const RecordDecl*> g_unique_recorddecl;
 
-static std::string getText(const SourceManager &SourceManager, SourceLocation StartSpellingLocation, SourceLocation EndSpellingLocation) {
+static std::string getText(const SourceManager &SourceManager,
+                          SourceLocation StartSpellingLocation,
+                          SourceLocation EndSpellingLocation) {
   if (!StartSpellingLocation.isValid() || !EndSpellingLocation.isValid()) {
     return std::string();
   }
@@ -116,11 +118,63 @@ public:
 };
 
 
+namespace qdict {
+// O:- [ ] QDict <T> -> std::unordered_map<std::string, T*>
+// O:  - [x] variable declaration QDictIterator
+// O:  - [ ] QDictIterator<T> li(children) -> std::list<T*>::iterator li = children.begin()
+class VarDeclIteratorCb : public BaseMatcherCb {
+public:
+    VarDeclIteratorCb(tooling::Replacements *r) : BaseMatcherCb(r) {}
+
+    virtual void run(const ast_matchers::MatchFinder::MatchResult &result) {
+      const auto decl = result.Nodes.getNodeAs<VarDecl>("qdict::varDeclIterator");
+      if (decl==nullptr) {
+        llvm::errs() <<"Unable to get decl\n";
+        return;
+      }
+      auto str = getText(*result.SourceManager,*decl);
+      if (! findNreplace(str,"QDictIterator\\s*<\\s*(\\w+)\\s*>\\s*(\\w+)\\(\\*(.*)\\)","std::unordered_map<std::string, $1*>::iterator $2(@B$3->@Ebegin())") )
+      if (! findNreplace(str,"QDictIterator\\s*<\\s*(\\w+)\\s*>\\s*(\\w+)\\((.*)\\)","std::unordered_map<std::string, $1*>::iterator $2(@B$3.@Ebegin())") )
+      if (! findNreplace(str,"QDictIterator\\s*<\\s*(\\w+)\\s*>\\s*\\((.*)\\)","std::unordered_map<std::string, $1*>::iterator ($2->begin())") )
+      if (! findNreplace(str,"QDictIterator\\s*<\\s*(\\w+)\\s*>","std::unordered_map<std::string, $1*>::iterator") )
+      if (! findNreplace(str,"(\\w+)DictIterator (\\w+)\\(\\*(.*)\\)","std::unordered_map<std::string, $1*>::iterator $2(@B$3->@Ebegin())") )
+      if (! findNreplace(str,"(\\w+)DictIterator (\\w+)\\((.*)\\)","std::unordered_map<std::string, $1*>::iterator $2(@B$3.@Ebegin())") )
+      if (! findNreplace(str,"(\\w+)DictIterator","std::unordered_map<std::string, $1*>::iterator") )
+        return;
+      Replace->insert(Replacement(*result.SourceManager, decl, str));
+    }
+};
+
+// O:  - [x] field declaration QList
+class FieldDeclCb : public BaseMatcherCb {
+public:
+    FieldDeclCb(tooling::Replacements *r) : BaseMatcherCb(r) {}
+
+    virtual void run(const ast_matchers::MatchFinder::MatchResult &result) {
+      const auto decl = result.Nodes.getNodeAs<FieldDecl>("qdict::fieldDecl");
+      if (decl==nullptr) {
+        llvm::errs() <<"Unable to get decl\n";
+        return;
+      }
+      auto str = getText(*result.SourceManager,*decl);
+      if (! findNreplace(str,"QDict<(\\w+)>","std::unordered_map<std::string, $1*>") ) return;
+      Replacement rep(*result.SourceManager, decl, str);
+      if (g_unique_fdecl.find(decl) == g_unique_fdecl.end()) {
+        Replace->insert(rep);
+        g_unique_fdecl.insert(decl);
+      }
+    }
+};
+}; // namespace qdict
+
+
+namespace qlist {
+
 // O:- [ ] QList <T> -> std::list<T*>
 // O:  - [x] class inheriting QList
-class InheritsQListCb : public BaseMatcherCb {
+class InheritCb : public BaseMatcherCb {
 public:
-    InheritsQListCb(tooling::Replacements *r) : BaseMatcherCb(r) {}
+    InheritCb(tooling::Replacements *r) : BaseMatcherCb(r) {}
 
     virtual void run(const ast_matchers::MatchFinder::MatchResult &result) {
       auto decl = result.Nodes.getNodeAs<CXXRecordDecl>("inheritsQList");
@@ -160,7 +214,7 @@ public:
     FieldDeclCb(tooling::Replacements *r) : BaseMatcherCb(r) {}
 
     virtual void run(const ast_matchers::MatchFinder::MatchResult &result) {
-      const auto decl = result.Nodes.getNodeAs<FieldDecl>("fieldDecl");
+      const auto decl = result.Nodes.getNodeAs<FieldDecl>("qlist::fieldDecl");
       if (decl==nullptr) {
         llvm::errs() <<"Unable to get decl\n";
         return;
@@ -192,7 +246,7 @@ public:
     }
 };
 
-// O:  - [x] QList::getFirst() -> std::list::front()
+// O:  - [x] getFirst() -> std::list::front()
 class GetFirstCb : public BaseMatcherCb {
 public:
     GetFirstCb(tooling::Replacements *r) : BaseMatcherCb(r) {}
@@ -211,7 +265,7 @@ public:
     }
 };
 
-// O:  - [x] QList::getLast() -> std::list::end()
+// O:  - [x] getLast() -> std::list::end()
 class GetLastCb : public BaseMatcherCb {
 public:
     GetLastCb(tooling::Replacements *r) : BaseMatcherCb(r) {}
@@ -230,7 +284,7 @@ public:
     }
 };
 
-// O:  - [x] QList::isEmpty() -> std::list::empty()
+// O:  - [x] isEmpty() -> std::list::empty()
 class IsEmptyCb : public BaseMatcherCb {
 public:
     IsEmptyCb(tooling::Replacements *r) : BaseMatcherCb(r) {}
@@ -245,6 +299,25 @@ public:
       const auto callee = call->getCallee();
       auto str = getText(*result.SourceManager,*callee);
       if (! findNreplace(str,m,"empty") ) return;
+      Replace->insert(Replacement(*result.SourceManager, callee, str));
+    }
+};
+
+// O:  - [x] count() -> std::list::size()
+class CountCb : public BaseMatcherCb {
+public:
+    CountCb(tooling::Replacements *r) : BaseMatcherCb(r) {}
+
+    virtual void run(const ast_matchers::MatchFinder::MatchResult &result) {
+      std::string m="count";
+      const auto call = result.Nodes.getNodeAs<CXXMemberCallExpr>(m);
+      if (call==nullptr) {
+        llvm::errs() << "unable to get " << m << "\n";
+        return;
+      }
+      const auto callee = call->getCallee();
+      auto str = getText(*result.SourceManager,*callee);
+      if (! findNreplace(str,m,"size") ) return;
       Replace->insert(Replacement(*result.SourceManager, callee, str));
     }
 };
@@ -302,7 +375,7 @@ public:
     }
 };
 
-// O:    - [x] QList::append(x) -> std::list::push_back(std::make_unique(x))
+// O:    - [x] append(x) -> std::list::push_back(std::make_unique(x))
 class AppendCb : public BaseMatcherCb {
 public:
     AppendCb(tooling::Replacements *r) : BaseMatcherCb(r) {}
@@ -322,7 +395,7 @@ public:
     }
 };
 
-// O:    - [x] QList::prepend(x) -> std::list::push_front(std::make_unique(x))
+// O:    - [x] prepend(x) -> std::list::push_front(std::make_unique(x))
 class PrependCb : public BaseMatcherCb {
 public:
     PrependCb(tooling::Replacements *r) : BaseMatcherCb(r) {}
@@ -342,12 +415,15 @@ public:
     }
 };
 
-// O:  - [x] return ref: QList<T> & cxxMethodDecl()
-// O:  - [x] return ptr: QList<T> * cxxMethodDecl()
-// O:  - [x] return obj: QList<T>   cxxMethodDecl()
-class ReturnQListCb : public BaseMatcherCb {
+// O:  - [ ] return ref: QList<T> & cxxMethodDecl()
+// O:  - [ ] return ptr: QList<T> * cxxMethodDecl()
+// O:  - [ ] return obj: QList<T>   cxxMethodDecl()
+// O:  - [x] return ref: QList<T> & functionDecl()
+// O:  - [x] return ptr: QList<T> * functionDecl()
+// O:  - [x] return obj: QList<T>   functionDecl()
+class ReturnCb : public BaseMatcherCb {
 public:
-    ReturnQListCb(tooling::Replacements *r) : BaseMatcherCb(r) {}
+    ReturnCb(tooling::Replacements *r) : BaseMatcherCb(r) {}
 
     virtual void run(const ast_matchers::MatchFinder::MatchResult &result) {
       const auto fdecl = result.Nodes.getNodeAs<FunctionDecl>("returnQList");
@@ -361,12 +437,12 @@ public:
 };
 
 // O:  - [x] new expression: new QList<T>
-class NewExprQListCb : public BaseMatcherCb {
+class NewExprCb : public BaseMatcherCb {
 public:
-    NewExprQListCb(tooling::Replacements *r) : BaseMatcherCb(r) {}
+    NewExprCb(tooling::Replacements *r) : BaseMatcherCb(r) {}
 
     virtual void run(const ast_matchers::MatchFinder::MatchResult &result) {
-      const auto cxxNewExpr = result.Nodes.getNodeAs<CXXNewExpr>("cxxNewExpr");
+      const auto cxxNewExpr = result.Nodes.getNodeAs<CXXNewExpr>("qlist::cxxNewExpr");
       if (cxxNewExpr==nullptr) {
         return;
       }
@@ -382,7 +458,7 @@ public:
     ConstructExprCb(tooling::Replacements *r) : BaseMatcherCb(r) {}
 
     virtual void run(const ast_matchers::MatchFinder::MatchResult &result) {
-      const auto cxxConstructExpr = result.Nodes.getNodeAs<CXXConstructExpr>("cxxConstructExpr");
+      const auto cxxConstructExpr = result.Nodes.getNodeAs<CXXConstructExpr>("qlist::cxxConstructExpr");
       if (cxxConstructExpr==nullptr) {
         return;
       }
@@ -393,16 +469,16 @@ public:
     }
 };
 
-// O:  - [ ] QList::remove(item) -> ?
-// O:  - [ ] QList::remove(index) -> ?
-// O:  - [ ] QList::findRef(item) -> ?
+// O:  - [ ] remove(item) -> ?
+// O:  - [ ] remove(index) -> ?
+// O:  - [ ] findRef(item) -> ?
 
 ////////////////////////////////////////////////////////////////////////////////
 // O:- [ ] QListIterator <T> -> std::list<T*>::iterator
 // O:  - [x] class inheriting QListIterator
-class InheritsQListIteratorCb : public BaseMatcherCb {
+class InheritsIteratorCb : public BaseMatcherCb {
 public:
-    InheritsQListIteratorCb(tooling::Replacements *r) : BaseMatcherCb(r) {}
+    InheritsIteratorCb(tooling::Replacements *r) : BaseMatcherCb(r) {}
 
     virtual void run(const ast_matchers::MatchFinder::MatchResult &result) {
       auto decl = result.Nodes.getNodeAs<CXXRecordDecl>("inheritsQListIterator");
@@ -432,9 +508,10 @@ public:
         return;
       }
       auto str = getText(*result.SourceManager,*decl);
-      if (! findNreplace(str,"QListIterator<(\\w+)> (\\w+)\\(\\*(.*)\\)","std::list<$1*>::iterator $2(@B$3->@Ebegin())") )
-      if (! findNreplace(str,"QListIterator<(\\w+)> (\\w+)\\((.*)\\)","std::list<$1*>::iterator $2(@B$3.@Ebegin())") )
-      if (! findNreplace(str,"QListIterator<(\\w+)>","std::list<$1*>::iterator") )
+      if (! findNreplace(str,"QListIterator\\s*<\\s*(\\w+)\\s*>\\s*(\\w+)\\(\\*(.*)\\)","std::list<$1*>::iterator $2(@B$3->@Ebegin())") )
+      if (! findNreplace(str,"QListIterator\\s*<\\s*(\\w+)\\s*>\\s*(\\w+)\\((.*)\\)","std::list<$1*>::iterator $2(@B$3.@Ebegin())") )
+      if (! findNreplace(str,"QListIterator\\s*<\\s*(\\w+)\\s*>\\s*\\((.*)\\)","std::list<$1*>::iterator ($2->begin())") )
+      if (! findNreplace(str,"QListIterator\\s*<\\s*(\\w+)\\s*>","std::list<$1*>::iterator") )
       if (! findNreplace(str,"(\\w+)ListIterator (\\w+)\\(\\*(.*)\\)","std::list<$1*>::iterator $2(@B$3->@Ebegin())") )
       if (! findNreplace(str,"(\\w+)ListIterator (\\w+)\\((.*)\\)","std::list<$1*>::iterator $2(@B$3.@Ebegin())") )
       if (! findNreplace(str,"(\\w+)ListIterator","std::list<$1*>::iterator") )
@@ -443,9 +520,9 @@ public:
     }
 };
 
-class QListIteratorCb : public BaseMatcherCb {
+class IteratorCb : public BaseMatcherCb {
 public:
-    QListIteratorCb(tooling::Replacements *r) : BaseMatcherCb(r) {}
+    IteratorCb(tooling::Replacements *r) : BaseMatcherCb(r) {}
 
     virtual void run(const ast_matchers::MatchFinder::MatchResult &result) {
       const auto fdecl = result.Nodes.getNodeAs<CXXConstructExpr>("qlistIterator");
@@ -470,7 +547,12 @@ public:
         return;
       }
       auto str = getText(*result.SourceManager,*fdecl);
-      if (! findNreplace(str, "\\(.*\\.toFirst\\(\\);\\((\\w+)=(\\w+).current\\(\\)\\);", "(; (@X$1,$2@Y); ") )
+      // for (ali.toFirst();!hasDocs && (a=ali.current());++ali)
+      // for (ali.toFirst();!hasDocs && (ali!=this->end() && a=*ali);++ali)
+      //-----
+      // for (ali.toFirst();!hasDocs && (a=ali.current());++ali)
+      // for (;(a=ali.current());++ali)
+      if (! findNreplace(str, "\\(.*\\.toFirst\\(\\);(.*)\\((\\w+)=(\\w+).current\\(\\)\\);", "(; $1 (@X$2,$3@Y); ") )
       if (! findNreplace(str, "\\((\\w+)=(\\w+).current\\(\\)\\)", "(@X$1,$2@Y)") )
         return;
       Replace->insert(Replacement(*result.SourceManager, fdecl, str));
@@ -480,20 +562,50 @@ public:
 // O:  - [x] return ref: QListIterator<T> & cxxMethodDecl()
 // O:  - [x] return ptr: QListIterator<T> * cxxMethodDecl()
 // O:  - [x] return obj: QListIterator<T>   cxxMethodDecl()
-class ReturnQListIteratorCb : public BaseMatcherCb {
+// O:  - [ ] return ref: QListIterator<T> & functionDecl()
+// O:  - [ ] return ptr: QListIterator<T> * functionDecl()
+// O:  - [ ] return obj: QListIterator<T>   functionDecl()
+class ReturnIteratorCb : public BaseMatcherCb {
 public:
-    ReturnQListIteratorCb(tooling::Replacements *r) : BaseMatcherCb(r) {}
+    ReturnIteratorCb(tooling::Replacements *r) : BaseMatcherCb(r) {}
 
     virtual void run(const ast_matchers::MatchFinder::MatchResult &result) {
-      const auto fdecl = result.Nodes.getNodeAs<CXXMethodDecl>("returnQListIterator");
-      if (fdecl==nullptr) {
+      const auto decl = result.Nodes.getNodeAs<CXXMethodDecl>("returnQListIterator");
+      if (decl==nullptr) {
         return;
       }
-      auto str = getText(*result.SourceManager,*fdecl);
-      if (! findNreplace(str,"QListIterator<(\\w+)>","std::list<$1*>::iterator") ) return;
-      Replace->insert(Replacement(*result.SourceManager, fdecl, str));
+      auto str = getText(*result.SourceManager,*decl);
+
+      std::string in = str;
+      std::regex re("QListIterator\\s*<\\s*(\\w+)\\s*>\\s*\\((.*)\\)");
+      std::smatch m;
+      std::string out;
+
+      while (std::regex_search(in, m, re))
+      {
+        out += m.prefix();
+        std::regex re("QListIterator\\s*<\\s*(\\w+)\\s*>\\s*\\(\\*(.*)\\)");
+        out += std::regex_replace(m[0].str(), re, "std::list<$1*>::iterator ($2->begin())");
+        in = m.suffix();
+      }
+      out += in;
+      in = out;
+      re = "QListIterator\\s*<\\s*(\\w+)\\s*>";
+      out = "";
+
+      while (std::regex_search(in, m, re))
+      {
+        out += m.prefix();
+        std::regex re("QListIterator\\s*<\\s*(\\w+)\\s*>");
+        out += std::regex_replace(m[0].str(), re, "std::list<$1*>::iterator");
+        in = m.suffix();
+      }
+      out += in;
+      Replace->insert(Replacement(*result.SourceManager, decl, out));
     }
 };
+}; // namespace qlist
+
 
 ////////////////////////////////////////////////////////////////////////////////
 // O:- [ ] QIntDict <T> -> std::map<T*>
@@ -540,26 +652,21 @@ int main(int argc, const char **argv) {
 
   auto recordDeclQList = cxxRecordDecl(isSameOrDerivedFrom(hasName("QList")));
 
-  //    inherit QList<T>
-  InheritsQListCb cb_i(&Tool.getReplacements());
+  qlist::InheritCb cb_i(&Tool.getReplacements());
   Finder.addMatcher(
       id("inheritsQList",
         recordDeclQList
         )
       ,&cb_i);
 
-  //    QList<T> & someFunction()
-  //    QList<T> * someFunction()
-  //    QList<T>   someFunction()
-  ReturnQListCb cb5(&Tool.getReplacements());
+  qlist::ReturnCb cb5(&Tool.getReplacements());
   Finder.addMatcher(
       id("returnQList",
         functionDecl(returns( anyOf(pointsTo(recordDeclQList), references(recordDeclQList),hasDeclaration(recordDeclQList) )))
         )
       ,&cb5);
 
-  //    QList<T> inputPaths;
-  VarDeclCb cb1(&Tool.getReplacements());
+  qlist::VarDeclCb cb1(&Tool.getReplacements());
   Finder.addMatcher(
       id("varDecl",
         varDecl(anyOf(hasType(recordDeclQList), hasType(pointsTo(recordDeclQList))))
@@ -568,7 +675,7 @@ int main(int argc, const char **argv) {
 
   // function params refs
 #if 0
-  ParmVarDeclCb cb3(&Tool.getReplacements());
+  Parmqlist::VarDeclCb cb3(&Tool.getReplacements());
   Finder.addMatcher(
       id("parmVarDecl",
         parmVarDecl(hasType(references(cxxRecordDecl(isSameOrDerivedFrom(hasName("QList"))))))
@@ -576,24 +683,28 @@ int main(int argc, const char **argv) {
       ,&cb3);
 #endif
 
-  //    QList::isEmpty()
-  IsEmptyCb cb2(&Tool.getReplacements());
+  qlist::IsEmptyCb cb2(&Tool.getReplacements());
   Finder.addMatcher(
       id("isEmpty",
         cxxMemberCallExpr(callee(memberExpr(member(hasName("isEmpty")))), thisPointerType(cxxRecordDecl(isSameOrDerivedFrom("QList"),isTemplateInstantiation() )))
         )
       ,&cb2);
+  
+  qlist::CountCb cb2_2(&Tool.getReplacements());
+  Finder.addMatcher(
+      id("count",
+        cxxMemberCallExpr(callee(memberExpr(member(hasName("count")))), thisPointerType(cxxRecordDecl(isSameOrDerivedFrom("QList"),isTemplateInstantiation() )))
+        )
+      ,&cb2_2);
 
-  //    QList::getFirst()
-  GetFirstCb cb21(&Tool.getReplacements());
+  qlist::GetFirstCb cb21(&Tool.getReplacements());
   Finder.addMatcher(
       id("getFirst",
         cxxMemberCallExpr(callee(memberExpr(member(hasName("getFirst")))), thisPointerType(cxxRecordDecl(hasName("QList"),isTemplateInstantiation() )))
         )
       ,&cb21);
 
-  //    QList::getLast()
-  GetLastCb cb22(&Tool.getReplacements());
+  qlist::GetLastCb cb22(&Tool.getReplacements());
   Finder.addMatcher(
       id("getLast",
         cxxMemberCallExpr(callee(memberExpr(member(hasName("getLast")))), thisPointerType(cxxRecordDecl(hasName("QList"),isTemplateInstantiation() )))
@@ -602,14 +713,14 @@ int main(int argc, const char **argv) {
 
   // match: QList::setAutoDelete(TRUE)
   // this is needed so I can use std::unique_ptr
-  FieldSetAutoDeleteTrueCb cb4(&Tool.getReplacements());
+  qlist::FieldSetAutoDeleteTrueCb cb4(&Tool.getReplacements());
   Finder.addMatcher(
       id("Field_setAutoDeleteTRUE",
         cxxConstructorDecl(forEachConstructorInitializer(forField( fieldDecl(hasType(namedDecl(hasName("QList")) )).bind("C")  )) )
         // TODO: also catch hasType(pointsTo(namedDecl ...
       )
       ,&cb4);
-   SetAutoDeleteTrueCb cb4_1(&Tool.getReplacements());
+   qlist::SetAutoDeleteTrueCb cb4_1(&Tool.getReplacements());
    Finder.addMatcher(
      id("setAutoDeleteTRUE",
        cxxMemberCallExpr( callee(memberExpr(member(hasName("setAutoDelete")))), thisPointerType(cxxRecordDecl(isSameOrDerivedFrom(hasName("QList")))))
@@ -617,42 +728,37 @@ int main(int argc, const char **argv) {
        )
      ,&cb4_1);
 
-   // class members (fields)
-   FieldDeclCb cb11(&Tool.getReplacements());
+   qlist::FieldDeclCb cb11(&Tool.getReplacements());
    Finder.addMatcher(
-     id("fieldDecl",
+     id("qlist::fieldDecl",
        fieldDecl(anyOf( hasType(pointsTo(recordDeclQList) )  ,  hasType(recordDeclQList)))
        )
      ,&cb11);
 
-   //   QList::append
-   AppendCb cb7(&Tool.getReplacements());
+   qlist::AppendCb cb7(&Tool.getReplacements());
    Finder.addMatcher(
        id("append",
          cxxMemberCallExpr( callee(memberExpr(member(hasName("append")))), on(id("thisDeclAppend",expr())), thisPointerType( recordDeclQList ))
          )
        ,&cb7);
 
-   //   QList::prepend
-   PrependCb cb8(&Tool.getReplacements());
+   qlist::PrependCb cb8(&Tool.getReplacements());
    Finder.addMatcher(
        id("prepend",
          cxxMemberCallExpr( callee(memberExpr(member(hasName("prepend")))), on( id("thisDeclPrepend",stmt(anything()))), thisPointerType( recordDeclQList))
          )
        ,&cb8);
 
-   //   QList<T>()
-   ConstructExprCb cb100(&Tool.getReplacements());
+   qlist::ConstructExprCb cb100(&Tool.getReplacements());
    Finder.addMatcher(
-       id("cxxConstructExpr",
+       id("qlist::cxxConstructExpr",
         cxxConstructExpr(hasType(namedDecl(hasName("QList"))))
         )
        ,&cb100);
 
-   //   new QList<T>
-   NewExprQListCb cb99(&Tool.getReplacements());
+   qlist::NewExprCb cb99(&Tool.getReplacements());
    Finder.addMatcher(
-       id("cxxNewExpr",
+       id("qlist::cxxNewExpr",
          cxxNewExpr(hasType(qualType(pointsTo(namedDecl(hasName("QList"))))))
          )
        ,&cb99);
@@ -664,24 +770,21 @@ int main(int argc, const char **argv) {
 
   auto recordDeclQListIterator = cxxRecordDecl(isSameOrDerivedFrom(hasName("QListIterator")));
 
-  //    inherit QListIterator<T>
-  InheritsQListIteratorCb cb_ii(&Tool.getReplacements());
+  qlist::InheritsIteratorCb cb_ii(&Tool.getReplacements());
   Finder.addMatcher(
       id("inheritsQListIterator",
         recordDeclQListIterator
         )
       ,&cb_ii);
 
-  //    QListIterator<T> it
-  VarDeclIteratorCb cb1it(&Tool.getReplacements());
+  qlist::VarDeclIteratorCb cb1it(&Tool.getReplacements());
   Finder.addMatcher(
       id("varDeclIterator",
         varDecl(anyOf(hasType(recordDeclQListIterator), hasType(pointsTo(recordDeclQListIterator))))
         )
       ,&cb1it);
 
-   //   QListIterator<T> it(arg)
-   QListIteratorCb cb6(&Tool.getReplacements());
+   qlist::IteratorCb cb6(&Tool.getReplacements());
    Finder.addMatcher(
        id("qlistIterator",
          cxxConstructExpr(hasType(recordDeclQListIterator))
@@ -689,26 +792,39 @@ int main(int argc, const char **argv) {
        ,&cb6);
 
 
-  //    QListIterator<T> & cxxMethodDecl()
-  //    QListIterator<T> * cxxMethodDecl()
-  //    QListIterator<T>   cxxMethodDecl()
-  ReturnQListIteratorCb it_cb5(&Tool.getReplacements());
+  qlist::ReturnIteratorCb it_cb5(&Tool.getReplacements());
   Finder.addMatcher(
       id("returnQListIterator",
         cxxMethodDecl(returns( anyOf(pointsTo(recordDeclQListIterator), references(recordDeclQListIterator), hasDeclaration(recordDeclQListIterator)  )))
         )
       ,&it_cb5);
 
-   //   for()
-   ForStmtIteratorCb cb66(&Tool.getReplacements());
+   qlist::ForStmtIteratorCb cb66(&Tool.getReplacements());
    Finder.addMatcher(
        id("forStmtIterator",
+         // cxxMemberCallExpr(callee(memberExpr(member(hasName("current")))),  thisPointerType(cxxRecordDecl(isSameOrDerivedFrom("QListIterator")))))
          forStmt( anyOf( hasLoopInit(cxxMemberCallExpr(callee(memberExpr(member(hasName("toFirst")))),  thisPointerType(cxxRecordDecl(isSameOrDerivedFrom("QListIterator")))))
-                       , hasCondition(cxxMemberCallExpr(callee(memberExpr(member(hasName("current")))),  thisPointerType(cxxRecordDecl(isSameOrDerivedFrom("QListIterator")))))
+                       ,  hasCondition(implicitCastExpr(   ) )
                        )
                 )
          )
        ,&cb66);
+  ///////////////////
+  auto recordDeclQDict = cxxRecordDecl(isSameOrDerivedFrom(hasName("QDict")));
+  auto recordDeclQDictIterator = cxxRecordDecl(isSameOrDerivedFrom(hasName("QDictIterator")));
+  qdict::VarDeclIteratorCb dict1(&Tool.getReplacements());
+  Finder.addMatcher(
+      id("qdict::varDeclIterator",
+        varDecl(anyOf(hasType(recordDeclQDictIterator), hasType(pointsTo(recordDeclQDictIterator))))
+        )
+      ,&dict1);
+
+  qdict::FieldDeclCb qb11(&Tool.getReplacements());
+   Finder.addMatcher(
+     id("qdict::fieldDecl",
+       fieldDecl(anyOf( hasType(pointsTo(recordDeclQDict) )  ,  hasType(recordDeclQDict)))
+       )
+     ,&qb11);
 
    return Tool.runAndSave(newFrontendActionFactory(&Finder).get());
 }
