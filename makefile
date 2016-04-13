@@ -86,7 +86,7 @@ r: refactor
 	git status -s | sed -n 's/^ M //p' | xargs sed -e '0,/#include .*/s//#include <list>\n#include <memory>\n&/' -i
 	cd $(DOXYGEN_DIR)              && \
 	for file in `git status -s | sed -n 's/^ M //p' `; do \
-	cat $${file} | /home/adrian/workspace/github/groleo/doxygen-refactor/bexy.pl > $${file}.ref ; \
+	cat $${file} | $(REF_SRC)/bexy.pl > $${file}.ref ; \
 	mv $${file}.ref $${file} ; done
 
 
