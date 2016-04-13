@@ -1,15 +1,10 @@
 LLVM_VERSION=3.8
-# For linking vs. a binary build of LLVM, point to the main untarred directory.
-# LLVM_BIN_PATH is the directory where binaries are placed by the LLVM build
-# process. It should contain the tools like opt, llc and clang. The default
-# reflects a debug build with autotools (configure & make), and needs to be
-# changed when a Ninja build is used (see below for example). For linking vs. a
-# binary build of LLVM, point it to the bin/ directory.
 LLVM_BIN_PATH := /usr/lib/llvm-$(LLVM_VERSION)/bin/
 
-# CXX has to be a fairly modern C++ compiler that supports C++11. gcc 4.8 and
-# higher or Clang 3.2 and higher are recommended. Best of all, if you build LLVM
-# from sources, use the same compiler you built LLVM with.
+# CXX has to be a fairly modern C++ compiler that supports C++11.
+#
+# gcc 4.9 and higher or Clang 3.8 and higher are recommended.
+# If you build LLVM from sources, use the same compiler you built LLVM with.
 CXX := /usr/bin/clang++-$(LLVM_VERSION)
 CXXFLAGS :=
 LLVM_CXXFLAGS := `$(LLVM_BIN_PATH)/llvm-config --cxxflags`
