@@ -64,6 +64,7 @@ test:
 
 .PHONY: r
 r: refactor
+	rm -rf $(DOXYGEN_DIR)/build && \
 	mkdir -p $(DOXYGEN_DIR)/build  && \
 	cd $(DOXYGEN_DIR)              && \
 	git reset --hard               && \
