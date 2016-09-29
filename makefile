@@ -1,4 +1,4 @@
-LLVM_VERSION=3.8
+LLVM_VERSION=3.9
 LLVM_BIN_PATH := /usr/lib/llvm-$(LLVM_VERSION)/bin/
 
 # CXX has to be a fairly modern C++ compiler that supports C++11.
@@ -46,13 +46,14 @@ CLANG_LIBS := \
 	-lclangToolingCore	\
 	-lclangFrontendTool	\
 	-lclangParse	\
+	-lclangFormat	\
 	-Wl,--end-group
 
 DOXYGEN_DIR=$(shell realpath ../doxygen)
 REF_SRC=$(PWD)
 
 .PHONY: all
-all: r s
+all: makefile r s
 
 refactor: refactor.cpp
 	$(CXX) $(CXXFLAGS) $(LLVM_CXXFLAGS) $(CLANG_INCLUDES) refactor.cpp -c -o refactor.o
@@ -107,4 +108,3 @@ s:
 	echo '-------------------' >> README.md
 	echo >> README.md
 	grep -r 'O:' refactor.cpp | cut -f2- -d: >> README.md
-

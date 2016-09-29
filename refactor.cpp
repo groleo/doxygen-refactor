@@ -632,7 +632,7 @@ public:
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 int main(int argc, const char **argv) {
-  llvm::sys::PrintStackTraceOnErrorSignal();
+  llvm::sys::PrintStackTraceOnErrorSignal("");
 
   std::unique_ptr<CompilationDatabase> Compilations(
       tooling::FixedCompilationDatabase::loadFromCommandLine(argc, argv));
